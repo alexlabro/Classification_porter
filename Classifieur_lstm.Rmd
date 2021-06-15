@@ -1,0 +1,322 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+library(entropy)
+library(spectral)
+library(moments)
+
+library(rlang)
+library(caTools)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/sma.R")
+
+```
+
+
+
+## Importation des Dataset filtered
+
+```{r}
+  #Importation des data
+  Acc_total_x <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_x.csv",header=FALSE))
+  Acc_total_y <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_y.csv",header=FALSE))
+  Acc_total_z <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_z.csv",header=FALSE))
+  
+  Acc_gravity_x <- as_tibble(read.csv("Fichiers_csv/gravity_acc_x.csv",header=FALSE))
+  Acc_gravity_y <- as_tibble(read.csv("Fichiers_csv/gravity_acc_y.csv",header=FALSE))
+  Acc_gravity_z <- as_tibble(read.csv("Fichiers_csv/gravity_acc_z.csv",header=FALSE))
+  
+  Labels <- as_tibble(read.csv("Fichiers_csv/Labels.csv",header=FALSE))
+  
+  Acc_Body_x <- Acc_total_x - Acc_gravity_x
+  Acc_Body_y <- Acc_total_y - Acc_gravity_y
+  Acc_Body_z <- Acc_total_z - Acc_gravity_z
+```
+
+
+```{r}
+data <- cbind(Labels,Acc_Body_x,Acc_Body_y,Acc_Body_z,Acc_gravity_x,Acc_gravity_y,Acc_gravity_z)
+print(dim(data))
+```
+
+
+```{r}
+sample = sample.split(data$V1, SplitRatio = 0.75)
+train = subset(data, sample == TRUE)
+test  = subset(data, sample == FALSE)
+
+names(train)[1] <- "Labels"
+names(test)[1] <- "Labels"
+```
+
+```{r}
+dim(test)
+```
+
+
+```{r}
+Acc_Body_x_train <- subset(Acc_Body_x,sample==TRUE)
+Acc_Body_y_train <- subset(Acc_Body_y,sample==TRUE)
+Acc_Body_z_train <- subset(Acc_Body_z,sample==TRUE)
+
+Acc_gravity_x_train <- subset(Acc_gravity_x,sample==TRUE)
+Acc_gravity_y_train <- subset(Acc_gravity_y,sample==TRUE)
+Acc_gravity_z_train <- subset(Acc_gravity_z,sample==TRUE)
+
+```
+
+
+```{r}
+Acc_Body_x_test <- subset(Acc_Body_x,sample==FALSE)
+Acc_Body_y_test <- subset(Acc_Body_y,sample==FALSE)
+Acc_Body_z_test <- subset(Acc_Body_z,sample==FALSE)
+
+Acc_gravity_x_test <- subset(Acc_gravity_x,sample==FALSE)
+Acc_gravity_y_test <- subset(Acc_gravity_y,sample==FALSE)
+Acc_gravity_z_test <- subset(Acc_gravity_z,sample==FALSE)
+
+```
+
+```{r}
+dim(Acc_Body_x_test)
+```
+
+
+#### Cleaning Nas from data
+
+Beaucoup de Nas ...
+
+
+
+```{r}
+which_nas <- apply(train, 1, function(X) any(is.na(X)))
+
+train <- train[-which(which_nas),]
+
+Acc_Body_x_train <- Acc_Body_x_train[-which(which_nas),]
+Acc_Body_y_train <- Acc_Body_y_train[-which(which_nas),]
+Acc_Body_z_train <- Acc_Body_z_train[-which(which_nas),]
+
+Acc_gravity_x_train <- Acc_gravity_x_train[-which(which_nas),]
+Acc_gravity_y_train <- Acc_gravity_y_train[-which(which_nas),]
+Acc_gravity_z_train <- Acc_gravity_z_train[-which(which_nas),]
+
+
+```
+
+
+```{r}
+which_nas <- apply(test, 1, function(X) any(is.na(X)))
+
+test <- test[-which(which_nas),]
+
+Acc_Body_x_test <- Acc_Body_x_test[-which(which_nas),]
+Acc_Body_y_test <- Acc_Body_y_test[-which(which_nas),]
+Acc_Body_z_test <- Acc_Body_z_test[-which(which_nas),]
+
+Acc_gravity_x_test <- Acc_gravity_x_test[-which(which_nas),]
+Acc_gravity_y_test <- Acc_gravity_y_test[-which(which_nas),]
+Acc_gravity_z_test <- Acc_gravity_z_test[-which(which_nas),]
+```
+
+
+```{r}
+dim(test)
+```
+
+# LSTM Classifier
+
+## Installer keras dans R...
+
+```{r}
+library(keras)
+library(reticulate)
+
+```
+
+```{r}
+reticulate::py_versions_windows()
+
+reticulate::py_config()
+
+reticulate::py_discover_config("keras")
+
+```
+
+
+
+
+## LTSM classifier on raw data
+
+
+
+
+
+### Creating an adapted dataset
+
+```{r}
+library(abind)
+
+Acc_Body_x_array <- as.matrix(Acc_Body_x_train)
+Acc_Body_y_array <- as.matrix(Acc_Body_y_train)
+Acc_Body_z_array <- as.matrix(Acc_Body_z_train)
+
+Acc_gravity_x_array <- as.matrix(Acc_gravity_x_train)
+Acc_gravity_y_array <- as.matrix(Acc_gravity_y_train)
+Acc_gravity_z_array <- as.matrix(Acc_gravity_z_train)
+
+my_x_data <- abind(Acc_Body_x_array,Acc_Body_y_array,Acc_Body_z_array,Acc_gravity_x_array,Acc_gravity_y_array,Acc_gravity_z_array,along=3)
+
+```
+
+```{r}
+dim(my_x_data)
+
+dim(train)
+```
+
+```{r}
+
+Acc_Body_x_array <- as.matrix(Acc_Body_x_test)
+Acc_Body_y_array <- as.matrix(Acc_Body_y_test)
+Acc_Body_z_array <- as.matrix(Acc_Body_z_test)
+
+Acc_gravity_x_array <- as.matrix(Acc_gravity_x_test)
+Acc_gravity_y_array <- as.matrix(Acc_gravity_y_test)
+Acc_gravity_z_array <- as.matrix(Acc_gravity_z_test)
+
+my_x_test_1 <- abind(Acc_Body_x_array,Acc_Body_y_array,Acc_Body_z_array,Acc_gravity_x_array,Acc_gravity_y_array,Acc_gravity_z_array,along=3)
+
+```
+
+```{r}
+dim(my_x_test_1)
+
+dim(test)
+```
+
+```{r}
+### NE PAS UTILISER CETTE METHODE
+
+#my_x_data <- array(unlist(train[,-1]),dim=c(length(train[,1]),750,6))
+
+#my_x_test_2 <- array(unlist(test[,-1]),dim=c(length(test[,1]),750,6))
+```
+
+
+```{r}
+library(CatEncoders)
+porters <- c("SOMMEIL","MARCHE","COURSE")
+lab_enc = LabelEncoder.fit(porters)
+
+
+my_y_data <- CatEncoders::transform(lab_enc,train$Labels) -1
+
+my_y_data <- to_categorical(my_y_data,num_classes=3)
+
+```
+
+```{r}
+
+my_y_test <- CatEncoders::transform(lab_enc,test$Labels) - 1
+my_y_test <- to_categorical(my_y_test,num_classes=3)
+
+groups_test <- factor(test$Labels)
+
+
+```
+
+## LSTM model
+
+```{r}
+model.lstm <- keras_model_sequential() %>%
+  layer_lstm(units = 32, input_shape = c(750,6),return_sequences = FALSE) %>%
+  layer_dense(units=3,activation = "softmax")
+  
+
+
+model.lstm %>% compile(loss="binary_crossentropy",optimizer="rmsprop",metrics="accuracy")
+ 
+model.lstm %>% summary()
+```
+
+```{r}
+
+history <- model.lstm %>% fit(my_x_data, my_y_data, epochs = 10, batch_size=128,validation_split=0.2)
+
+plot(history)
+```
+
+```{r}
+print(history)
+```
+
+### Results on test data and confusion matrix
+
+
+```{r}
+
+score <- keras::evaluate(model.lstm,my_x_test_1,my_y_test)
+cat('Test accuracy:', score$acc, "\n")
+
+```
+
+
+```{r}
+
+#Printing the confusion matrix
+library(caret)
+library(cvms)
+
+
+lstm.pred <- predict_classes(model.lstm,my_x_test_1)+1
+
+lstm.pred <- factor(CatEncoders::inverse.transform(lab_enc,as.double(lstm.pred)))
+
+
+confusionMatrix(data=lstm.pred,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = lstm.pred)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+
+
+
