@@ -1,0 +1,381 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+library(entropy)
+library(spectral)
+library(moments)
+
+library(rlang)
+library(caTools)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/sma.R")
+
+```
+
+
+
+## Importation des Dataset filtered
+
+```{r}
+  #Importation des data
+  Acc_total_x <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_x.csv",header=FALSE))
+  Acc_total_y <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_y.csv",header=FALSE))
+  Acc_total_z <- as_tibble(read.csv("Fichiers_csv/Filtered_total_acc_z.csv",header=FALSE))
+  
+  Acc_gravity_x <- as_tibble(read.csv("Fichiers_csv/gravity_acc_x.csv",header=FALSE))
+  Acc_gravity_y <- as_tibble(read.csv("Fichiers_csv/gravity_acc_y.csv",header=FALSE))
+  Acc_gravity_z <- as_tibble(read.csv("Fichiers_csv/gravity_acc_z.csv",header=FALSE))
+  
+  Labels <- as_tibble(read.csv("Fichiers_csv/Labels.csv",header=FALSE))
+  
+  Acc_Body_x <- Acc_total_x - Acc_gravity_x
+  Acc_Body_y <- Acc_total_y - Acc_gravity_y
+  Acc_Body_z <- Acc_total_z - Acc_gravity_z
+```
+
+
+```{r}
+data <- cbind(Labels,Acc_Body_x,Acc_Body_y,Acc_Body_z)
+```
+
+```{r}
+sample = sample.split(data$V1, SplitRatio = 0.75)
+train = subset(data, sample == TRUE)
+test  = subset(data, sample == FALSE)
+
+names(train)[1] <- "Inputs"
+names(test)[1] <- "Inputs"
+
+Acc_Body_x_train <- subset(Acc_Body_x,sample==TRUE)
+Acc_Body_y_train <- subset(Acc_Body_y,sample==TRUE)
+Acc_Body_z_train <- subset(Acc_Body_z,sample==TRUE)
+
+Acc_Body_x_test <- subset(Acc_Body_x,sample==FALSE)
+Acc_Body_y_test <- subset(Acc_Body_y,sample==FALSE)
+Acc_Body_z_test <- subset(Acc_Body_z,sample==FALSE)
+
+```
+
+
+Objectif : définir un modèle qui prédit un sample d'accélération réaliste selon le type de porter à réaliser.
+
+On va donc entrainer le modèle avec le type de porter en INPUT et les 3 features Acc_Body_X,Y,Z en "Labels"
+
+
+
+
+
+
+#### Cleaning Nas from data
+
+Beaucoup de Nas ...
+
+```{r}
+which_nas <- apply(train, 1, function(X) any(is.na(X)))
+
+train <- train[-which(which_nas),]
+
+Acc_Body_x_train <- Acc_Body_x_train[-which(which_nas),]
+Acc_Body_y_train <- Acc_Body_y_train[-which(which_nas),]
+Acc_Body_z_train <- Acc_Body_z_train[-which(which_nas),]
+
+
+```
+
+
+```{r}
+which_nas <- apply(test, 1, function(X) any(is.na(X)))
+
+test <- test[-which(which_nas),]
+
+Acc_Body_x_test <- Acc_Body_x_test[-which(which_nas),]
+Acc_Body_y_test <- Acc_Body_y_test[-which(which_nas),]
+Acc_Body_z_test <- Acc_Body_z_test[-which(which_nas),]
+
+```
+
+```{r}
+dim(test)
+```
+
+
+
+
+# LSTM One to many forecasting
+
+## Installer keras dans R
+
+```{r}
+library(keras)
+library(reticulate)
+
+```
+
+```{r}
+reticulate::py_versions_windows()
+
+reticulate::py_config()
+
+reticulate::py_discover_config("keras")
+
+```
+
+
+
+## Dataset adapté
+
+```{r}
+library(CatEncoders)
+porters <- c("SOMMEIL","MARCHE","COURSE")
+lab_enc = LabelEncoder.fit(porters)
+
+
+X_train_forecast <- CatEncoders::transform(lab_enc,train$Inputs) -1
+
+X_train_forecast <- to_categorical(X_train_forecast,num_classes=3)
+
+X_train_forecast <- as.matrix(cbind(X_train_forecast,Acc_Body_x_train[,1],Acc_Body_y_train[,1],Acc_Body_z_train[,1]))
+
+
+X_test_forecast <- CatEncoders::transform(lab_enc,test$Inputs) -1
+
+X_test_forecast <- to_categorical(X_test_forecast,num_classes=3)
+
+X_test_forecast <- as.matrix(cbind(X_test_forecast,Acc_Body_x_test[,1],Acc_Body_y_test[,1],Acc_Body_z_test[,1]))
+
+groups_test <- factor(test$Inputs)
+
+```
+
+
+
+```{r}
+Y_train_forecast <- array(unlist(train[,-1]),dim=c(length(train[,1]),750,3))
+
+Y_test_forecast <- array(unlist(test[,-1]),dim=c(length(test[,1]),750,3))
+```
+
+
+
+```{r}
+#Visualisation
+
+plot(Y_train_forecast[1,,1],type="l",main=train$Inputs[1])
+
+plot(Y_train_forecast[2,,2],type="l",main=train$Inputs[2])
+
+```
+
+
+## Single shot model
+
+One approach to this problem is use a "single-shot" model, where the model makes the entire sequence prediction in a single step.
+
+This can be implemented efficiently as a layers.Dense with OUT_STEPS*features output units. The model just needs to reshape that output to the required (OUTPUT_STEPS, features)
+
+
+### Linear + Dense model
+
+Linear + Dense models make their predictions based only on a single input which is close to what we want here because our input is only a single class.
+
+
+```{r}
+model.linear <- keras_model_sequential() %>%
+    layer_lambda(f=identity,input_shape = 6) %>%
+    layer_dense(64, activation='relu') %>%
+    layer_dense(units=750*3) %>%
+    layer_reshape(c(750,3))
+
+model.linear
+
+
+```
+
+
+
+```{r}
+model.linear %>% compile(loss="mean_squared_error",metrics="mean_absolute_error",optimizer="adam")
+```
+
+
+```{r}
+history <- model.linear %>% fit(X_train_forecast, Y_train_forecast, epochs = 30, batch_size=32,validation_split=0.05)
+
+print(history)
+plot(history)
+```
+
+
+```{r}
+score <- keras::evaluate(model.linear,X_test_forecast,Y_test_forecast)
+```
+
+
+```{r}
+Predicted_samples <- predict(model.linear,X_test_forecast)
+```
+
+
+
+
+```{r}
+tmp <- 30
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-1, 1))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+```{r}
+tmp <- 260
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-0.1, 0.1))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+
+
+```{r}
+tmp <- 360
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-1.5, 1.5))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+
+
+
+
+
+
+
+
+
+
+### Prediction de la suite d'un sample
+
+
+
+
+```{r}
+library(CatEncoders)
+porters <- c("SOMMEIL","MARCHE","COURSE")
+lab_enc = LabelEncoder.fit(porters)
+
+
+X_train_forecast <- abind(Acc_Body_x_train[,2:376],Acc_Body_y_train[,2:376],Acc_Body_z_train[,2:376],along=3)
+
+
+X_test_forecast <- abind(Acc_Body_x_test[,2:376],Acc_Body_y_test[,2:376],Acc_Body_z_test[,2:376],along=3)
+
+groups_test <- factor(test$Inputs)
+
+```
+
+
+```{r}
+Y_train_forecast <- abind(Acc_Body_x_train[,2:376],Acc_Body_y_train[,2:376],Acc_Body_z_train[,2:376],along=3)
+
+Y_test_forecast <- array(unlist(test[,-1]),dim=c(length(test[,1]),750,3))
+```
+
+```{r}
+identical(Y_train_forecast,X_train_forecast)
+```
+
+
+## Single shot model forecast
+
+One approach to this problem is use a "single-shot" model, where the model makes the entire sequence prediction in a single step.
+
+This can be implemented efficiently as a layers.Dense with OUT_STEPS*features output units. The model just needs to reshape that output to the required (OUTPUT_STEPS, features)
+
+
+### LSTM model
+
+LSTM recurrent neural network
+
+```{r}
+model.forecast <- keras_model_sequential() %>%
+    layer_lstm(units=32,input_shape = c(749,3)) %>%
+    layer_dense(units=750*3) %>%
+    layer_reshape(c(750,3))
+
+model.forecast
+
+
+```
+
+```{r}
+model.forecast %>% compile(loss="mean_absolute_error",metrics="mean_absolute_error",optimizer="adam")
+```
+
+
+```{r}
+history <- model.forecast %>% fit(X_train_forecast, Y_train_forecast,epoch=30, batch_size=32,validation_split=0.05)
+
+print(history)
+plot(history)
+```
+
+
+```{r}
+score <- keras::evaluate(model.forecast,X_test_forecast,Y_test_forecast)
+```
+
+
+```{r}
+Predicted_samples <- predict(model.forecast,X_test_forecast)
+```
+
+
+
+
+```{r}
+tmp <- 2
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-1, 1))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+
+```{r}
+tmp <- 258
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-0.1, 0.1))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+
+
+```{r}
+tmp <- 360
+plot(Predicted_samples[tmp,,1],type="l",main=groups_test[tmp],col="blue",xlim=c(0, 750), ylim=c(-1.5, 1.5))
+lines(Y_test_forecast[tmp,,1],col="red",)
+```
+
+
+
+
+
+
+
+

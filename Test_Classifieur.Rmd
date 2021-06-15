@@ -1,0 +1,418 @@
+---
+title: "Test_classifieur"
+output: html_document
+---
+
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+library(entropy)
+library(spectral)
+library(moments)
+
+library(rlang)
+library(caTools)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/sma.R")
+
+```
+
+
+## Importation du Dataset
+
+```{r}
+library(readr)
+Dataset_total_features <- read.csv("Dataset_csv/Dataset_total_features.csv",header = FALSE,sep = ',')
+```
+
+```{r}
+names(Dataset_total_features)[1] <- "Labels"
+```
+
+Les dernières features sont toutes égales à 1...
+
+
+
+### Data cleaning
+
+```{r}
+print(paste0("Number of NAs : ",sum(is.na(Dataset_total_features))))
+```
+
+
+
+```{r}
+which_nas <- apply(Dataset_total_features, 1, function(X) any(is.na(X)))
+which(which_nas)
+```
+
+SOLUTION CHOISIE : SUPPRIMER LES LIGNES AVEC DES NAs
+
+
+```{r}
+Dataset_sans_na <- Dataset_total_features[-which(which_nas),]
+num_feat <- Dataset_sans_na[,-1]
+```
+
+
+
+
+
+### Normalisation des variables
+
+```{r}
+library(rlang)
+
+scaled_data <- duplicate(num_feat)
+bool <- (apply(num_feat,2,sd)>0)
+for (q in 1:length(bool)){
+  if(bool[q]){
+    scaled_data[,q] <- (num_feat[,q]-mean(num_feat[,q]))/sd(num_feat[,q])
+  }
+  else{
+    scaled_data[,q] <- num_feat[,q]-mean(num_feat[,q])
+  }
+  
+}
+
+```
+
+
+
+### Train/Test sets
+
+
+Train/test split
+```{r}
+require(caTools)
+
+data <- cbind(Dataset_sans_na$Labels,scaled_data)
+
+sample = sample.split(data, SplitRatio = 0.75)
+train = subset(data, sample == TRUE)
+test  = subset(data, sample == FALSE)
+```
+
+
+```{r}
+names(train)[1] <- "Labels"
+names(test)[1] <- "Labels"
+```
+
+
+# Feature selection/extraction
+
+
+## PCA
+
+```{r}
+library(factoextra)
+
+train.pca <- prcomp(train[,-1])
+
+```
+
+
+
+```{r}
+fviz_eig(train.pca)
+
+```
+
+```{r}
+plot(cumsum(train.pca$sdev^2 / sum(train.pca$sdev^2)), type="b",ylab = "Cumulative Proportion of Variance Explained",)
+abline(v = 60, col="blue", lty=5)
+abline(h = 0.95, col="blue", lty=5)
+legend("bottomright", legend=c("Cut-off à 95% at PC60"),
+       col=c("blue"), lty=5, cex=0.6)
+
+```
+
+
+#### Plotting individuals PCA
+
+```{r}
+groups_train <- as.factor(train$Labels)
+
+groups_test <- as.factor(test$Labels)
+```
+
+
+```{r}
+fviz_pca_ind(train.pca,
+             col.ind = groups_train, # Color by the groups
+             palette = c("red",  "blue","green"),
+             addEllipses = TRUE, # Concentration ellipses
+             ellipse.type = "confidence",
+             legend.title = "Porter",             
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+
+#### PCA sur les données de test
+
+```{r}
+test.pca <- as.data.frame(predict(train.pca,newdata = test[,-1]))
+
+ggplot(test.pca, aes(x=PC1,y=PC2))+
+  geom_point(aes(color=groups_test))+
+  scale_color_manual(values = c("red","blue","green"))
+
+```
+
+
+```{r}
+# Train/Test set from PCA with 60 variables
+trainset_pca <- as.data.frame(train.pca$x)[,1:60]
+
+testset_pca <- as.data.frame(test.pca)[,1:60]
+```
+
+
+
+# Classification
+
+## Support Vector Machine (SVC-SVM)
+
+### Support Vector Machine classification on real data 
+
+```{r}
+library(e1071)
+library(rpart)
+
+# SVC model on real data: train
+svc.model <- svm(train[,-1],as.factor(train$Labels), type = 'C-classification',cost=1,kernel="linear",scale=FALSE)
+# SVC model on real data: classify test set
+svc.pred  <- predict(svc.model, test[, -1])
+
+
+# Accuracy of SVC on real data
+accuracy_svc_real <- sum(svc.pred == groups_test)/length(groups_test)
+accuracy_svc_real
+```
+
+
+```{r}
+library(caret)
+library(cvms)
+
+confusionMatrix(data=svc.pred,reference = groups_test)
+
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = svc.pred)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+### Support Vector Machine classification on PCA data
+
+
+```{r}
+
+# SVC model on pca data: train
+svc.model.pca <- svm(trainset_pca,groups_train, type='C-classification',cost=1,kernel="linear",scale=FALSE) #Pas d'itérations
+# SVC model on real data: classify test set
+svc.pred.pca  <- predict(svc.model.pca, testset_pca) #Pas d'itérations
+
+# Accuracy of SVC on pca data
+accuracy_svc_pca <- sum(svc.pred.pca == groups_test)/length(groups_test)
+accuracy_svc_pca
+```
+
+
+```{r}
+confusionMatrix(data=svc.pred.pca,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = svc.pred.pca)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+## Logistic Regression
+
+
+### Logistic Regression classification on real data
+
+```{r}
+library(nnet)
+
+# Fit the model
+model.glm <- multinom(Labels ~.-Labels, data = train,MaxNWts=2000) #Iterations
+
+#Prediction
+glm.pred <- predict(model.glm, newdata = test[,-1])
+
+accuracy_glm_real <- mean(glm.pred==groups_test)
+
+print(paste0("---Accuracy sur la base de test : ",accuracy_glm_real))
+
+```
+
+
+```{r}
+confusionMatrix(data=glm.pred,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = glm.pred)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+### Logistic Regression on PCA data
+
+```{r}
+
+trainset_pca["Labels"] <- groups_train
+
+
+# Fit the model on PCA with 60 variables
+model.glm.pca <- multinom(Labels~.-Labels, trainset_pca,MaxNWts=2000) #Iterations
+
+#Prediction
+glm.pred.pca <- predict(model.glm.pca, newdata = testset_pca)
+
+accuracy_glm_pca <- mean(glm.pred.pca==groups_test)
+
+print(paste0("---Accuracy sur la base de test avec PCA 60 variables : ",accuracy_glm_pca))
+```
+
+
+```{r}
+confusionMatrix(data=glm.pred.pca,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = glm.pred.pca)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+
+## Decision Trees
+
+
+### Decision tree classification on real data
+
+```{r}
+library(tree)
+library(rpart)
+
+#Fitting decision tree model
+model.tree <- rpart(Labels~. , data=train, method = "class",control = rpart.control(cp=0))
+
+summary(model.tree)
+
+#Prediction
+tree.pred <- predict(model.tree, newdata = test[,-1],type = "class")
+
+accuracy_tree_real <- mean(tree.pred==groups_test)
+
+print(paste0("---Accuracy sur la base de test : ",accuracy_tree_real))
+```
+
+
+```{r}
+plot(model.tree)
+text(model.tree)
+```
+
+
+```{r}
+printcp(model.tree)
+plotcp(model.tree)
+```
+
+
+
+```{r}
+#Comment expliquer cet arbre de décision
+
+ggplot(train, aes(x=V38,y=V45))+
+  geom_point(aes(color=groups_train))+
+  scale_color_manual(values = c("red","blue","green"))
+```
+
+
+```{r}
+confusionMatrix(data=tree.pred,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = tree.pred)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+
+
+### Decision tree on PCA data
+
+```{r}
+#Fitting decision tree model on PCA data with 60 variables
+model.tree.pca <- rpart(Labels~. , data=trainset_pca, method = "class",control = rpart.control(cp=0))
+
+summary(model.tree.pca)
+
+#Prediction
+tree.pred.pca <- predict(model.tree.pca, newdata = testset_pca,type = "class")
+
+accuracy_tree_pca <- mean(tree.pred.pca==groups_test)
+
+print(paste0("---Accuracy sur la base de test : ",accuracy_tree_pca))
+```
+
+```{r}
+plot(model.tree.pca)
+text(model.tree.pca)
+```
+
+
+
+```{r}
+confusionMatrix(data=tree.pred.pca,reference = groups_test)
+
+conf_matrix <- confusion_matrix(targets=groups_test, predictions = tree.pred.pca)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+```
+
+
+
+
+
+
+
+

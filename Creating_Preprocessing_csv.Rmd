@@ -1,0 +1,52 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/sma.R")
+
+```
+
+
+## Importations des fichiers .bin
+
+```{r}
+# Importer le fichier binfile depuis le folder "Fichiers_bin"
+source("Scripts_R/Files_from_bin.R")
+files <- Files_from_bin()
+files
+```
+## Preprocessing and Creation of csv files
+
+```{r}
+Creation_Preprocessed_csv(files)
+```
+

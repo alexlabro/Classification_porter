@@ -1,0 +1,58 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+library(entropy)
+library(spectral)
+library(moments)
+```
+
+## Importation des fonctions à utiliser de puis Scripts_R
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/sma.R")
+source("Scripts_R/mean_square.R")
+source("Scripts_R/meanFreq.R")
+source("Scripts_R/Creation_Features.R")
+source("Scripts_R/IQR_maison.R")
+
+
+```
+
+
+## Importation des fichiers .csv et creation du Dataset.csv
+
+```{r, message=FALSE,warning=FALSE}
+#Il faut avoir le dossier Fichiers_csv avec les 7 fichiers d'acceleration filtered, et le folder Dataset_csv
+Creation_Features()
+```
+
+
+
+

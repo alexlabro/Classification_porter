@@ -1,0 +1,88 @@
+---
+title: 'Exemple Pipeline données 1'
+author: "Alexandre Labrogere"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+```
+
+```{r}
+# Importer le fichier binfile depuis le folder "Fichiers_bin"
+source("Scripts_R/Files_from_bin.R")
+files <- Files_from_bin()
+files
+```
+#### Exemple de Pipeline pour un des fichiers
+
+
+```{r}
+#Création du dataframe
+for (i in 1:length(files)){
+  binfile=files[i]
+  file.info(binfile)
+  acc_data <- import_df_GENEA(binfile)
+  acc_data
+  df2 <- Coord_spher_GENEA(acc_data)
+  df2
+  Visu_donnee_GENEA(df2)
+}
+
+```
+
+
+```{r}
+#Calcul des des accélérations sur la sphere unité
+
+```
+
+
+```{r}
+#Visualisation des données
+```
+
+
+
+
+
+
+```{r}
+#représentation graphique
+library(rgl)
+
+#rep_graphique_GENEA(df2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
