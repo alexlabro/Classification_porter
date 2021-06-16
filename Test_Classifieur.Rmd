@@ -375,6 +375,20 @@ plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE
 
 
 
+# Saving the model
+
+```{r}
+
+# load libraries
+library(caret)
+library(mlbench)
+library(randomForest)
+library(doMC)
+registerDoMC(cores=8)
+
+# save the model to disk
+saveRDS(model.tree, "Models/decision_tree_model.rds")
+```
 
 
 

@@ -317,6 +317,11 @@ plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE
 
 
 
+## Saving the model
+
+```{r}
+model.lstm %>% save_model_hdf5("Models/lstm_model.h5")
+```
 
 
 

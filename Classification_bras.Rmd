@@ -1,0 +1,125 @@
+---
+title: "Classification des données issues du bras robotique"
+output: html_notebook
+---
+## Importation des packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, warning= FALSE}
+library(tidyverse)    # advanced data manipulation and visualization
+library(knitr)        # R notebook export and formatting 
+library(GENEAread)
+library(GENEAclassify)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+
+library(signal)
+library(dplyr)
+library(entropy)
+library(spectral)
+library(moments)
+
+library(rlang)
+library(caTools)
+```
+
+```{r}
+# Functions to use.
+source("Scripts_R/import_df_GENEA.R")
+source("Scripts_R/Coord_spher_GENEA.R")
+source("Scripts_R/Visu_donnee_GENEA.R")
+source("Scripts_R/rep_graphique_GENEA.R")
+source("Scripts_R/Creation_Preprocessed_csv.R")
+source("Scripts_R/Creation_Preprocessed_csv_bras.R")
+source("Scripts_R/sma.R")
+
+```
+
+
+## Importation du Dataset
+
+```{r}
+library(readr)
+Dataset_total_features <- read.csv("Fichiers_csv_bras/Dataset_total_features_bras.csv",header = FALSE,sep = ',')
+```
+
+```{r}
+names(Dataset_total_features)[1] <- "Labels_bras"
+```
+
+
+### Data cleaning
+
+```{r}
+print(paste0("Number of NAs : ",sum(is.na(Dataset_total_features))))
+```
+
+
+
+```{r}
+which_nas <- apply(Dataset_total_features, 1, function(X) any(is.na(X)))
+which(which_nas)
+```
+
+SOLUTION CHOISIE : SUPPRIMER LES LIGNES AVEC DES NAs
+
+
+```{r}
+Dataset_sans_na <- Dataset_total_features[-which(which_nas),]
+num_feat <- Dataset_sans_na[,-1]
+
+library(rlang)
+
+scaled_data <- duplicate(num_feat)
+bool <- (apply(num_feat,2,sd)>0)
+for (q in 1:length(bool)){
+  if(bool[q]){
+    scaled_data[,q] <- (num_feat[,q]-mean(num_feat[,q]))/sd(num_feat[,q])
+  }
+  else{
+    scaled_data[,q] <- num_feat[,q]-mean(num_feat[,q])
+  }
+}
+
+data_bras <- cbind(Dataset_sans_na$Labels_bras,scaled_data)
+```
+
+
+
+## Importation des modèles prédictifs trained avec les données d'accelerometre
+
+
+```{r}
+# Machine learning models in \Models
+
+# load the model
+model.tree <- readRDS("Models/decision_tree_model.rds")
+print(model.tree)
+
+# make a predictions on "new data" using the final model
+pred_bras <- predict(model.tree, newdata = data_bras[,-1], type = "class")
+
+Labels_bras <- as.factor(data_bras[,1])
+```
+
+
+```{r}
+conf_matrix <- confusion_matrix(targets=Labels_bras, predictions = pred_bras)
+
+plot_confusion_matrix(conf_matrix$'Confusion Matrix'[[1]],add_normalized = FALSE,add_counts = TRUE)
+
+```
+
+
+
+
+
+
+
+
